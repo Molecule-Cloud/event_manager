@@ -1,3 +1,4 @@
+require 'erb'
 require 'csv'
 require 'google/apis/civicinfo_v2'
 
@@ -10,32 +11,38 @@ end
 def legislators_by_zipcode(zip)
   civic_info = Google::Apis::CivicinfoV2::CivicInfoService.new
   civic_info.key = File.read('../civic_info.key').strip
-
   begin
-    legislators = civic_info.representative_info_by_address(
+    civic_info.representative_info_by_address(
       address: zip,
       levels: 'country',
       roles: %w[legislatorUpperBody legislatorLowerBody]
-    )
-    legislators = legislators.officials
-    legislator_names = legislators.map(&:name)
-    legislator_names.join(', ')
+    ).officials
   rescue StandardError
     'You can find your representatives by visiting www.commoncause.org/take-action/find-elected-officials'
   end
 end
 
-template_letter = File.read('../form_letter.html')
+# Method to save the thank-you letter
+def save_thank_you_letter(id, form_letter)
+  Dir.mkdir('output') unless Dir.exist?('output') # Creates the output directory if it doesn't exist
+  file_name = "output/thanks_#{id}.html" # Creates the file name
+  File.open(file_name, 'w') do |file|
+    file.puts form_letter # Writes the form letter to the file
+  end
+end
+
+template_letter = File.read('../form_letter.erb')
+erb_template = ERB.new template_letter # Creates a new ERB template
 
 contents = CSV.open('../event_attendees.csv',
-                    headers: true,
-                    header_converters: :symbol)
+                    headers: true, # Treats the first row as headers
+                    header_converters: :symbol) # Converts headers to symbols
 
 contents.each do |row|
-  name = row[:first_name]
-  zipcode = clean_zipcode(row[:zipcode])
-  legislators = legislators_by_zipcode(zipcode)
-  personal_letter = template_letter.gsub('FIRST_NAME', name)
-  personal_letter.gsub!('LEGISLATORS', legislators)
-  puts personal_letter
+  id = row[0] # Extracts the ID
+  name = row[:first_name] # Extracts the first name
+  zipcode = clean_zipcode(row[:zipcode]) # Cleans the ZIP code
+  legislators = legislators_by_zipcode(zipcode) # Fetches legislators by ZIP code
+  form_letter = erb_template.result(binding) # Generates the form letter using ERB template
+  save_thank_you_letter(id, form_letter) # Saves the form letter
 end
